@@ -16,17 +16,21 @@ jobs:
         target: [x86_64-pc-windows-gnu,armv7-unknown-linux-musleabihf]
     runs-on: ubuntu-latest
     steps:
-    - name: Install Linux and Windows Cross Compilers
-      run: sudo apt-get install --yes --no-install-recommends musl-tools gcc-mingw-w64-x86-64-win32
-    - name: Install Rustup targets
-      run: rustup target add ${{ matrix.target }}
-    - uses: actions/checkout@v3
-    - name: Build
-      env:
-        MELODY_PLUS_CLIENT_ID: ${{ secrets.MELODY_PLUS_CLIENT_ID }}
-      run: cargo build --release --verbose --target=${{ matrix.target }}
-    - name: Upload Binaries
-      uses: actions/upload-artifact@v3
-      with:
-        name: binaries
-        path: target/${{ matrix.target }}/release/melody_plus*
+      - uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          target: ${{ matrix.target }}
+          override: true
+      - uses: actions-rs/cargo@v1
+        env:
+          MELODY_PLUS_CLIENT_ID: ${{ secrets.MELODY_PLUS_CLIENT_ID }}
+        with:
+          use-cross: true
+          command: build
+          args: --release --target ${{ matrix.target }}
+      - name: Upload Binaries
+        uses: actions/upload-artifact@v3
+        with:
+          name: binaries
+          path: target/${{ matrix.target }}/release/melody_plus*
