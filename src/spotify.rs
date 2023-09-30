@@ -1,3 +1,5 @@
+use std::fs::File;
+use std::io::prelude::*;
 use base64::{engine::general_purpose, Engine as _};
 use image::{ImageBuffer, Rgba};
 use querystring::stringify;
@@ -130,8 +132,11 @@ impl<'a> SpotifyClient {
             Err(token.unwrap_err())
         } else {
             let mut auth = token?.clone();
-            if &auth.expires_at >= &chrono::Utc::now().timestamp() {
+            if &auth.expires_at <= &chrono::Utc::now().timestamp() {
                 auth = self.refresh_token(auth.refresh_token).await?;
+                let mut file = File::create("./token.json").expect("");
+                file.write_all(serde_json::json!(auth).to_string().as_bytes())
+                    .expect("");
                 self.access_token = Option::Some(auth.clone());
             }
             let resp = self
