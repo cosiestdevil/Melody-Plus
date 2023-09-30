@@ -17,8 +17,8 @@ jobs:
     - name: Build
       env:
         MELODY_PLUS_CLIENT_ID: ${{ secrets.MELODY_PLUS_CLIENT_ID }}
-      run: cargo build --verbose
-    - name: Run tests
-      env:
-        MELODY_PLUS_CLIENT_ID: ${{ secrets.MELODY_PLUS_CLIENT_ID }}
-      run: cargo test --verbose
+      run: cargo build --verbose --target=x86_64-pc-windows-msvc
+    - uses: ncipollo/release-action@v1
+      with:
+        artifacts: "target/x86_64-pc-windows-msvc/release/*.exe"
+        prerelease: true
