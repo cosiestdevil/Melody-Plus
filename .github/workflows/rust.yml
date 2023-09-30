@@ -11,19 +11,22 @@ env:
 
 jobs:
   build:
+    strategy:
+      matrix:
+        target: [x86_64-pc-windows-gnu,armv7-unknown-linux-gnueabihf]
     runs-on: ubuntu-latest
     steps:
     - name: Install Linux and Windows Cross Compilers
-      run: sudo apt-get install --yes --no-install-recommends musl-tools gcc-mingw-w64-x86-64-win32
+      run: sudo apt-get install --yes --no-install-recommends musl-tools gcc-mingw-w64-x86-64-win32 gcc-arm7-linux-gnueabihf
     - name: Install Rustup targets
       run: rustup target add x86_64-pc-windows-gnu
     - uses: actions/checkout@v3
     - name: Build
       env:
         MELODY_PLUS_CLIENT_ID: ${{ secrets.MELODY_PLUS_CLIENT_ID }}
-      run: cargo build --release --verbose --target=x86_64-pc-windows-gnu
+      run: cargo build --release --verbose --target=${{ matrix.target }}
     - name: Upload Binaries
       uses: actions/upload-artifact@v3
       with:
         name: binaries
-        path: target/x86_64-pc-windows-gnu/release/melody_plus*
+        path: target/${{ matrix.target }}/release/melody_plus*
