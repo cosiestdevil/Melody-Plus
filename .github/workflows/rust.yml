@@ -17,7 +17,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Install Linux and Windows Cross Compilers
-      run: sudo apt-get install --yes --no-install-recommends musl-tools gcc-mingw-w64-x86-64-win32 gcc-arm7-linux-gnueabihf
+      run: sudo apt-get install --yes --no-install-recommends musl-tools gcc-mingw-w64-x86-64-win32
     - name: Install Rustup targets
       run: rustup target add x86_64-pc-windows-gnu
     - uses: actions/checkout@v3
