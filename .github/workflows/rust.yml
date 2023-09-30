@@ -11,15 +11,14 @@ env:
 
 jobs:
   build:
-
     runs-on: ubuntu-latest
-
-    steps:
-      
+    steps:      
     - uses: actions/checkout@v3
     - name: Build
       env:
         MELODY_PLUS_CLIENT_ID: ${{ secrets.MELODY_PLUS_CLIENT_ID }}
       run: cargo build --verbose
     - name: Run tests
+      env:
+        MELODY_PLUS_CLIENT_ID: ${{ secrets.MELODY_PLUS_CLIENT_ID }}
       run: cargo test --verbose
