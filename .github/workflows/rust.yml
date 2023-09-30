@@ -24,7 +24,7 @@ jobs:
     - name: Build
       env:
         MELODY_PLUS_CLIENT_ID: ${{ secrets.MELODY_PLUS_CLIENT_ID }}
-      run: cargo build --release --verbose --target=${{ matrix.target }}
+      run: cargo build --release --verbose --target=${{ matrix.target }} --no-run
     - name: Upload Binaries
       uses: actions/upload-artifact@v3
       with:
