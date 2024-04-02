@@ -27,6 +27,8 @@ use speedy2d::window::{MouseButton, UserEventSender, WindowCreationOptions, Wind
 use crate::spotify::QueueObjectCurrentlyPlaying;
 
 mod spotify;
+#[cfg(target_os = "linux")]
+mod battery;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 const NAME: &str = env!("CARGO_PKG_NAME");
@@ -69,6 +71,12 @@ struct DisplayData {
     next_button_position: ((f32, f32), (f32, f32)),
     repeat_button_position: ((f32, f32), (f32, f32)),
     shuffle_button_position: ((f32, f32), (f32, f32)),
+    battery: Option<BatteryData>
+}
+#[derive(Clone, Debug)]
+pub struct BatteryData{
+    charge:f64,
+    charging:bool
 }
 
 impl Default for DisplayData {
@@ -78,7 +86,7 @@ impl Default for DisplayData {
             track: Default::default(),
             album: Default::default(),
             artist: Default::default(),
-            accent: Default::default(),
+            accent: RGB8::new(255,255,255),
             image: Default::default(),
             track_length: Default::default(),
             current_progress: Default::default(),
@@ -96,6 +104,7 @@ impl Default for DisplayData {
             play_button_position: ((225.0 + button_offset, 325.0), (300.0 + button_offset, 400.0)),
             next_button_position: ((325.0 + button_offset, 325.0), (400.0 + button_offset, 400.0)),
             repeat_button_position: ((425.0 + button_offset, 325.0), (500.0 + button_offset, 400.0)),
+            battery:None,
         }
     }
 }
@@ -104,10 +113,26 @@ struct MyWindow {
     events: UserEventSender<DisplayData>,
     data: DisplayData,
 }
-
+#[cfg(unix)]
+fn setup_battery(user_event_sender: UserEventSender<DisplayData>){
+    let _battery_thread = std::thread::spawn(move || {
+        let ina = battery::setup();
+        if let Ok(mut ina) = ina {
+            loop {
+                std::thread::sleep(Duration::from_secs(2));
+                let mut mut_data = DisplayData::default();
+                mut_data.battery = battery::get_percent(&mut ina);
+                user_event_sender.send_event(mut_data.clone()).unwrap();
+            }
+        }
+    });
+}
+#[cfg(windows)]
+fn setup_battery(_user_event_sender: UserEventSender<DisplayData>){}
 impl WindowHandler<DisplayData> for MyWindow {
     fn on_start(&mut self, helper: &mut WindowHelper<DisplayData>, _info: WindowStartupInfo) {
-        let user_event_sender = self.events.clone();
+        let poll_user_event_sender = self.events.clone();
+        let battery_user_event_sender = self.events.clone();
         let client = Client::builder().build().unwrap();
         let refresh = include_str!("refresh.token");
         let token = Arc::new(Mutex::new(get_token(&client, refresh.into()).unwrap()));
@@ -122,18 +147,19 @@ impl WindowHandler<DisplayData> for MyWindow {
         let icon_size = (image.width(), image.height());
         warn!("icon_size:{icon_size:?}");
         helper.set_icon_from_rgba_pixels(image.into_raw(), icon_size).unwrap();
+
         let _poll_thread = std::thread::spawn(move || {
             loop {
                 std::thread::sleep(Duration::from_millis(500));
 
                 let mut_data = poll(poll_token.lock().unwrap().deref(),&poll_client);
                 match mut_data{
-                    Ok(mut_data)=>user_event_sender.send_event(mut_data.clone()).unwrap(),
+                    Ok(mut_data)=>poll_user_event_sender.send_event(mut_data.clone()).unwrap(),
                     Err(err)=>error!("{err:?}")
                 };
             };
         });
-        let _refresh_thread: std::thread::JoinHandle<Result<()>> = std::thread::spawn(move || {
+        let _refresh_thread = std::thread::spawn(move || {
             loop {
                 std::thread::sleep(Duration::from_secs(60 * 30));
                 let mut token = refresh_token.lock().unwrap();
@@ -146,9 +172,15 @@ impl WindowHandler<DisplayData> for MyWindow {
                 }
             }
         });
+       setup_battery(battery_user_event_sender);
     }
     fn on_user_event(&mut self, helper: &mut WindowHelper<DisplayData>, user_event: DisplayData) {
-        let mut new_data = DisplayData { mouse: self.data.mouse,track_offset:self.data.track_offset, ..user_event };
+        if let Some(battery) = user_event.battery{
+            self.data.battery = Some(battery);
+            helper.request_redraw();
+            return;
+        }
+        let mut new_data = DisplayData { mouse: self.data.mouse,battery:self.data.battery.clone(),track_offset:self.data.track_offset, ..user_event };
         if new_data.track!=self.data.track{
             new_data.track_offset = -50.0;
         }
@@ -187,7 +219,14 @@ impl WindowHandler<DisplayData> for MyWindow {
         graphics.draw_text((self.data.cover_position.1.0 + 25.0, 75.0), accent, &album);
         let artist = font.layout_text(&*self.data.artist.clone(), 24.0, TextOptions::new());
         graphics.draw_text((self.data.cover_position.1.0 + 25.0, 105.0), accent, &artist);
-
+        if let Some(battery)= &self.data.battery {
+            let mut battery_text = format!("Battery: {:3.0}%",battery.charge);
+            if battery.charging{
+                battery_text = format!("{} - Charging",battery_text);
+            }
+            let battery = font.layout_text(battery_text.as_str(), 24.0, TextOptions::new());
+            graphics.draw_text((self.data.cover_position.1.0 + 25.0, 135.0), accent, &battery);
+        }
         let progress_bar_back = Rectangle::from_tuples(self.data.progress_position.0, self.data.progress_position.1);
         let progress_bar_back_color = Color::from_rgba(accent.r(), accent.g(), accent.b(), 0.5);
         graphics.draw_rectangle(progress_bar_back, progress_bar_back_color);
