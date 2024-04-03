@@ -27,7 +27,7 @@ use speedy2d::window::{MouseButton, UserEventSender, WindowCreationOptions, Wind
 use crate::spotify::QueueObjectCurrentlyPlaying;
 
 mod spotify;
-#[cfg(target_os = "linux")]
+#[cfg(all(unix,feature="INA219" ))]
 mod battery;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -113,7 +113,7 @@ struct MyWindow {
     events: UserEventSender<DisplayData>,
     data: DisplayData,
 }
-#[cfg(unix)]
+#[cfg(all(unix,feature="INA219" ))]
 fn setup_battery(user_event_sender: UserEventSender<DisplayData>){
     let _battery_thread = std::thread::spawn(move || {
         let ina = battery::setup();
@@ -127,7 +127,7 @@ fn setup_battery(user_event_sender: UserEventSender<DisplayData>){
         }
     });
 }
-#[cfg(windows)]
+#[cfg(not(all(unix,feature="INA219" )))]
 fn setup_battery(_user_event_sender: UserEventSender<DisplayData>){}
 impl WindowHandler<DisplayData> for MyWindow {
     fn on_start(&mut self, helper: &mut WindowHelper<DisplayData>, _info: WindowStartupInfo) {
