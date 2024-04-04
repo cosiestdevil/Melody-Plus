@@ -37,7 +37,7 @@ fn main() -> Result<()> {
     CombinedLogger::init(
         vec![
             TermLogger::new(LevelFilter::Warn, Config::default(), TerminalMode::Mixed, ColorChoice::Auto),
-            WriteLogger::new(LevelFilter::Info, Config::default(), File::create(format!("{NAME}.log")).unwrap()),
+            WriteLogger::new(LevelFilter::Info, Config::default(), File::create(home::home_dir().unwrap().join(format!("{NAME}.log"))).unwrap()),
         ]
     ).unwrap();
     let window: Window<DisplayData> = Window::new_with_user_events("Title", WindowCreationOptions::new_windowed(

@@ -33,7 +33,7 @@ speedy2d = { version = "2.1.0", path= "../Speedy2D",default-features = true }
 color-rs = "0.8.0"
 log = "0.4.21"
 simplelog = { version = "0.12.2", default-features = false,features = ["termcolor"]}
-
+home = "0.5.9"
 [profile.release]
 strip = true
 lto = true
