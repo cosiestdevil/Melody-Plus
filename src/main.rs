@@ -1,9 +1,6 @@
-#[macro_use] extern crate log;
-extern crate simplelog;
-
 use std::fs::File;
 use simplelog::*;
-
+use log::{info,error,warn};
 use std::ops::Deref;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -12,7 +9,7 @@ use anyhow::Result;
 use color::{Hsv, ToHsv};
 use image::RgbaImage;
 use reqwest::blocking::Client;
-use reqwest::StatusCode;
+use reqwest::StatusCode; 
 use rgb::{RGB, RGB8};
 use serde::{Deserialize, Serialize};
 use speedy2d::{Graphics2D, Window};
