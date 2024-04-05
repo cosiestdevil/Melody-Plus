@@ -1,3 +1,5 @@
+#![allow(illegal_floating_point_literal_pattern)]
+
 use std::fs::File;
 use simplelog::*;
 use log::{info, error, warn};
@@ -26,6 +28,7 @@ use crate::spotify::QueueObjectCurrentlyPlaying;
 mod spotify;
 #[cfg(all(unix, feature = "INA219"))]
 mod battery;
+mod wifi;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 const NAME: &str = env!("CARGO_PKG_NAME");
@@ -113,7 +116,7 @@ impl Default for DisplayData {
             next_button_position: (((button_size * 3.0) + (margin * 3.0) + button_offset, button_y), ((button_size * 4.0) + (margin * 3.0) + button_offset, button_y + button_size)),
             repeat_button_position: (((button_size * 4.0) + (margin * 4.0) + button_offset, button_y), ((button_size * 5.0) + (margin * 4.0) + button_offset, button_y + button_size)),
             battery_position: ((670.0, margin * 0.5), (725.0, margin * 1.5)),
-            network_position: ((725.0, margin * 0.5), (750.0, margin * 1.5)),
+            network_position: ((730.0, margin * 0.5), (750.0, margin * 1.5)),
             battery: None,
         }
     }
@@ -202,10 +205,6 @@ impl WindowHandler<DisplayData> for MyWindow {
         if new_data.track != self.data.track {
             new_data.track_offset = -50.0;
         }
-        new_data.battery = Some(BatteryData {
-            charging: true,
-            charge: 50.0,
-        });
         self.data = new_data;
         helper.request_redraw();
     }
@@ -233,7 +232,7 @@ impl WindowHandler<DisplayData> for MyWindow {
         helper.set_title(format!("{} - {} - {} {}", self.data.track.clone(), self.data.artist.clone(), NAME, VERSION));
         let track = font.layout_text(&*self.data.track.clone(), 48.0, TextOptions::new());
         let track_origin = (self.data.cover_position.1.0 + 25.0, self.data.cover_position.0.1);
-        let track_window = Rectangle::from_tuples(track_origin, (track_origin.0 + 525.0, track_origin.1 + 32.0));
+        let track_window = Rectangle::from_tuples(track_origin, (track_origin.0 + 525.0, track_origin.1 + 50.0));
 
         if track.width() > 525.0 {
             let m_width = font.layout_text("m", 32.0, TextOptions::new()).width();
@@ -250,11 +249,19 @@ impl WindowHandler<DisplayData> for MyWindow {
         graphics.draw_text((track_origin.0, track_origin.1 + 50.0), accent, &album);
         let artist = font.layout_text(&*self.data.artist.clone(), 24.0, TextOptions::new());
         graphics.draw_text((track_origin.0, track_origin.1 + 80.0), accent, &artist);
+        if let Ok(signal) = wifi::get_signal(){
+            let signal_icon = match signal{
+                0.0..=0.25=>"\u{ebe4}",
+                0.25..=0.5=>"\u{ebd6}",
+                0.5..=0.75=>"\u{ebe1}",
+                0.75..=1.0=>"\u{e1ba}",
+                _=>"\u{f063}"
+            };
+            let signal_icon = iconfont.layout_text(signal_icon, 32.0, TextOptions::new());
+            graphics.draw_text((self.data.network_position.0.0, self.data.battery_position.1.1 - 32.0), accent, &signal_icon);
+        }
         if let Some(battery) = &self.data.battery {
             let mut battery_text = format!("{:3.0}%", battery.charge);
-            /*if battery.charging {
-                battery_text = format!("{} - Charging", battery_text);
-            }*/
             let battery_text = font.layout_text(battery_text.as_str(), 24.0, TextOptions::new());
             graphics.draw_text(self.data.battery_position.0, accent, &battery_text);
             let battery_icon =
