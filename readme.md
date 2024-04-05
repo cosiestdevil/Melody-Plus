@@ -5,9 +5,25 @@ Can be used on a Raspberry Pi (Zero 2 W), Windows, or in theory any OpenGL 2 sup
 Currently, it embeds the used refresh token for getting access tokens at compile time along with the client id and secret, so no binary releases at the moment.
 
 ## Compiling From Source
-### Raspberry Pi
+### Prerequisites
+- A [Rust](https://www.rust-lang.org/tools/install) development environment
+- A Spotify Premium Account
+- A Spotify Developer Account
+
+### Compiling
+1. Clone this repo
+2. Create the client.id and client.secret files in the src directory, these should contain the Spotify App Client ID and Client Secret you are going to be using
+3. Generate a refresh token and place in a refresh.token file in the src directory
+   - Currently, this has to be done before compiling, the long term plan is to have this be off device (Probably using PKCE and an intermediate server/web app, this would also negate needing to embed the client secret as well)
+   - You can either generate this yourself on your build machine or use something like [this](https://spotify-refresh-token-generator.netlify.app/). 
+   - You will need the user-read-playback-state scope.
+4. Run `cargo build` this will compile for your current system
+   - If cross compiling I recommend [Cross](https://github.com/cross-rs/cross)
+
+### Target Systems
+#### Raspberry Pi
 Can be cross-compiled with the target "armv7-unknown-linux-gnueabihf", should be able to be compiled on device as this target is a Tier 2 Target with Host Tools, however it is probably better to compile on a more powerful machine
-### Windows
+#### Windows
 Has been tested to compile targeting "x86_64-pc-windows-msvc" on Windows 11.
 Uses [winres](https://crates.io/crates/winres) to embed the icon for windows.
 
