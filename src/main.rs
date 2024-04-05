@@ -1,15 +1,15 @@
 use std::fs::File;
 use simplelog::*;
-use log::{info,error,warn};
+use log::{info, error, warn};
 use std::ops::Deref;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use anyhow::Result;
-use color::{Hsv, ToHsv};
 use image::RgbaImage;
+use palette::{Hsl, IntoColor, FromColor, Srgb, Hsv};
 use reqwest::blocking::Client;
-use reqwest::StatusCode; 
+use reqwest::StatusCode;
 use rgb::{RGB, RGB8};
 use serde::{Deserialize, Serialize};
 use speedy2d::{Graphics2D, Window};
@@ -24,7 +24,7 @@ use speedy2d::window::{MouseButton, UserEventSender, WindowCreationOptions, Wind
 use crate::spotify::QueueObjectCurrentlyPlaying;
 
 mod spotify;
-#[cfg(all(unix,feature="INA219" ))]
+#[cfg(all(unix, feature = "INA219"))]
 mod battery;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -45,6 +45,8 @@ fn main() -> Result<()> {
     window.run_loop(MyWindow { events: user_event_sender, data: DisplayData::default() });
 }
 
+type Position = ((f32, f32), (f32, f32));
+
 #[derive(Clone, Debug)]
 struct DisplayData {
     track: String,
@@ -61,29 +63,38 @@ struct DisplayData {
     mouse: (f32, f32),
     track_offset: f32,
     token: RefreshResponse,
-    cover_position: ((f32, f32), (f32, f32)),
-    progress_position: ((f32, f32), (f32, f32)),
-    play_button_position: ((f32, f32), (f32, f32)),
-    prev_button_position: ((f32, f32), (f32, f32)),
-    next_button_position: ((f32, f32), (f32, f32)),
-    repeat_button_position: ((f32, f32), (f32, f32)),
-    shuffle_button_position: ((f32, f32), (f32, f32)),
-    battery: Option<BatteryData>
+    cover_position: Position,
+    progress_position: Position,
+    play_button_position: Position,
+    prev_button_position: Position,
+    next_button_position: Position,
+    repeat_button_position: Position,
+    shuffle_button_position: Position,
+    battery: Option<BatteryData>,
+    battery_position: Position,
+    network_position: Position,
 }
+
 #[derive(Clone, Debug)]
-pub struct BatteryData{
-    charge:f64,
-    charging:bool
+pub struct BatteryData {
+    charge: f64,
+    charging: bool,
 }
 
 impl Default for DisplayData {
     fn default() -> Self {
-        let button_offset = 125.0;
+        let margin = 25.0;
+        let button_offset = 125.0 + margin;
+        let vertical_offset = 50.0;
+        let cover_size = 200.0;
+        let progress_height = 50.0;
+        let button_y = vertical_offset + cover_size + margin + progress_height + margin;
+        let button_size = 75.0;
         DisplayData {
             track: Default::default(),
             album: Default::default(),
             artist: Default::default(),
-            accent: RGB8::new(255,255,255),
+            accent: RGB8::new(255, 255, 255),
             image: Default::default(),
             track_length: Default::default(),
             current_progress: Default::default(),
@@ -92,16 +103,18 @@ impl Default for DisplayData {
             repeat: Default::default(),
             actions: Default::default(),
             mouse: Default::default(),
-            track_offset:Default::default(),
+            track_offset: Default::default(),
             token: Default::default(),
-            cover_position: ((25.0, 25.0), (225.0, 225.0)),
-            progress_position: ((25.0, 250.0), (775.0, 300.0)),
-            shuffle_button_position: ((25.0 + button_offset, 325.0), (100.0 + button_offset, 400.0)),
-            prev_button_position: ((125.0 + button_offset, 325.0), (200.0 + button_offset, 400.0)),
-            play_button_position: ((225.0 + button_offset, 325.0), (300.0 + button_offset, 400.0)),
-            next_button_position: ((325.0 + button_offset, 325.0), (400.0 + button_offset, 400.0)),
-            repeat_button_position: ((425.0 + button_offset, 325.0), (500.0 + button_offset, 400.0)),
-            battery:None,
+            cover_position: ((margin, vertical_offset), (margin + cover_size, vertical_offset + cover_size)),
+            progress_position: ((margin, vertical_offset + margin + cover_size), (margin + 750.0, vertical_offset + margin + cover_size + progress_height)),
+            shuffle_button_position: ((button_offset, button_y), (button_size + button_offset, button_y + button_size)),
+            prev_button_position: (((button_size * 1.0) + (margin * 1.0) + button_offset, button_y), ((button_size * 2.0) + (margin * 1.0) + button_offset, button_y + button_size)),
+            play_button_position: (((button_size * 2.0) + (margin * 2.0) + button_offset, button_y), ((button_size * 3.0) + (margin * 2.0) + button_offset, button_y + button_size)),
+            next_button_position: (((button_size * 3.0) + (margin * 3.0) + button_offset, button_y), ((button_size * 4.0) + (margin * 3.0) + button_offset, button_y + button_size)),
+            repeat_button_position: (((button_size * 4.0) + (margin * 4.0) + button_offset, button_y), ((button_size * 5.0) + (margin * 4.0) + button_offset, button_y + button_size)),
+            battery_position: ((670.0, margin * 0.5), (725.0, margin * 1.5)),
+            network_position: ((725.0, margin * 0.5), (750.0, margin * 1.5)),
+            battery: None,
         }
     }
 }
@@ -110,8 +123,9 @@ struct MyWindow {
     events: UserEventSender<DisplayData>,
     data: DisplayData,
 }
-#[cfg(all(unix,feature="INA219" ))]
-fn setup_battery(user_event_sender: UserEventSender<DisplayData>){
+
+#[cfg(all(unix, feature = "INA219"))]
+fn setup_battery(user_event_sender: UserEventSender<DisplayData>) {
     let _battery_thread = std::thread::spawn(move || {
         let ina = battery::setup();
         if let Ok(mut ina) = ina {
@@ -124,15 +138,22 @@ fn setup_battery(user_event_sender: UserEventSender<DisplayData>){
         }
     });
 }
-#[cfg(not(all(unix,feature="INA219" )))]
-fn setup_battery(_user_event_sender: UserEventSender<DisplayData>){}
+
+#[cfg(not(all(unix, feature = "INA219")))]
+fn setup_battery(_user_event_sender: UserEventSender<DisplayData>) {}
+
 impl WindowHandler<DisplayData> for MyWindow {
     fn on_start(&mut self, helper: &mut WindowHelper<DisplayData>, _info: WindowStartupInfo) {
         let poll_user_event_sender = self.events.clone();
         let battery_user_event_sender = self.events.clone();
         let client = Client::builder().build().unwrap();
         let refresh = include_str!("refresh.token");
-        let token = Arc::new(Mutex::new(get_token(&client, refresh.into()).unwrap()));
+        let token = get_token(&client, refresh.into());
+        if let Err(err) = token {
+            error!("{err:?}");
+            return;
+        }
+        let token = Arc::new(Mutex::new(token.unwrap()));
         let poll_token = token.clone();
         let poll_client = client.clone();
         let refresh_token = token.clone();
@@ -142,17 +163,16 @@ impl WindowHandler<DisplayData> for MyWindow {
             .decode().unwrap()
             .into_rgba8();
         let icon_size = (image.width(), image.height());
-        warn!("icon_size:{icon_size:?}");
         helper.set_icon_from_rgba_pixels(image.into_raw(), icon_size).unwrap();
 
         let _poll_thread = std::thread::spawn(move || {
             loop {
                 std::thread::sleep(Duration::from_millis(500));
 
-                let mut_data = poll(poll_token.lock().unwrap().deref(),&poll_client);
-                match mut_data{
-                    Ok(mut_data)=>poll_user_event_sender.send_event(mut_data.clone()).unwrap(),
-                    Err(err)=>error!("{err:?}")
+                let mut_data = poll(poll_token.lock().unwrap().deref(), &poll_client);
+                match mut_data {
+                    Ok(mut_data) => poll_user_event_sender.send_event(mut_data.clone()).unwrap(),
+                    Err(err) => error!("{err:?}")
                 };
             };
         });
@@ -161,26 +181,31 @@ impl WindowHandler<DisplayData> for MyWindow {
                 std::thread::sleep(Duration::from_secs(60 * 30));
                 let mut token = refresh_token.lock().unwrap();
                 let new_token = get_token(&refresh_client, refresh.into());
-                match new_token{
+                match new_token {
                     Ok(new_token) => {
                         info!("Got New Token");
-                        *token = new_token},
-                    Err(err)=>error!("{err:?}")
+                        *token = new_token
+                    }
+                    Err(err) => error!("{err:?}")
                 }
             }
         });
-       setup_battery(battery_user_event_sender);
+        setup_battery(battery_user_event_sender);
     }
     fn on_user_event(&mut self, helper: &mut WindowHelper<DisplayData>, user_event: DisplayData) {
-        if let Some(battery) = user_event.battery{
+        if let Some(battery) = user_event.battery {
             self.data.battery = Some(battery);
             helper.request_redraw();
             return;
         }
-        let mut new_data = DisplayData { mouse: self.data.mouse,battery:self.data.battery.clone(),track_offset:self.data.track_offset, ..user_event };
-        if new_data.track!=self.data.track{
+        let mut new_data = DisplayData { mouse: self.data.mouse, battery: self.data.battery.clone(), track_offset: self.data.track_offset, ..user_event };
+        if new_data.track != self.data.track {
             new_data.track_offset = -50.0;
         }
+        new_data.battery = Some(BatteryData {
+            charging: true,
+            charge: 50.0,
+        });
         self.data = new_data;
         helper.request_redraw();
     }
@@ -190,39 +215,74 @@ impl WindowHandler<DisplayData> for MyWindow {
 
         let bytes = include_bytes!("NotoEmoji-Regular.ttf");
         let unifont = Font::new(bytes).unwrap();
-        let accent = Color::from_int_rgb(self.data.accent.r, self.data.accent.g, self.data.accent.b);
-
-        graphics.clear_screen(Color::from_int_rgb(1, 4, 9));
+        let bytes = include_bytes!("MaterialSymbolsOutlined.ttf");
+        let iconfont = Font::new(bytes).unwrap();
+        let mut accent = Color::from_int_rgb(self.data.accent.r, self.data.accent.g, self.data.accent.b);
+        let background = Color::from_int_rgb(1, 4, 9);
+        let accent_contrast  =(accent.subjective_brightness() - background.subjective_brightness()).abs();
+        if accent_contrast < 0.2{
+            let mut hsl:Hsl = Hsl::from_color(Srgb::new(self.data.accent.r,self.data.accent.g,self.data.accent.b).into_format::<f32>());
+            hsl.lightness+=0.2;
+            let rgb = Srgb::from_color(hsl);
+            accent = Color::from_rgb(rgb.red,rgb.green,rgb.blue);
+        }
+        graphics.clear_screen(background);
         let cover_rect = Rectangle::from_tuples(self.data.cover_position.0, self.data.cover_position.1);
         let cover_image = graphics.create_image_from_raw_pixels(ImageDataType::RGBA, ImageSmoothingMode::Linear, (self.data.image.width(), self.data.image.height()), self.data.image.as_raw().as_slice()).unwrap();
         graphics.draw_rectangle_image(cover_rect, &cover_image);
         helper.set_title(format!("{} - {} - {} {}", self.data.track.clone(), self.data.artist.clone(), NAME, VERSION));
-        let track = font.layout_text(&*self.data.track.clone(), 32.0, TextOptions::new());
-        let track_origin = (self.data.cover_position.1.0 + 25.0, 25.0);
-        let track_window = Rectangle::from_tuples(track_origin,(track_origin.0+525.0,track_origin.1+32.0));
+        let track = font.layout_text(&*self.data.track.clone(), 48.0, TextOptions::new());
+        let track_origin = (self.data.cover_position.1.0 + 25.0, self.data.cover_position.0.1);
+        let track_window = Rectangle::from_tuples(track_origin, (track_origin.0 + 525.0, track_origin.1 + 32.0));
 
-        if track.width() > 525.0{
-            let m_width = font.layout_text("m",32.0,TextOptions::new()).width();
-            graphics.draw_text_cropped((track_origin.0-self.data.track_offset.clamp(0.0,track.width()-525.0),track_origin.1),track_window,accent,&track);
-            self.data.track_offset+=m_width/60.0;
-            if self.data.track_offset > (track.width()-525.0)+50.0{
+        if track.width() > 525.0 {
+            let m_width = font.layout_text("m", 32.0, TextOptions::new()).width();
+            graphics.draw_text_cropped((track_origin.0 - self.data.track_offset.clamp(0.0, track.width() - 525.0), track_origin.1), track_window, accent, &track);
+            self.data.track_offset += m_width / 60.0;
+            if self.data.track_offset > (track.width() - 525.0) + 50.0 {
                 self.data.track_offset = -50.0;
             }
             helper.request_redraw();
-        }else{
+        } else {
             graphics.draw_text(track_origin, accent, &track);
         }
         let album = font.layout_text(&*self.data.album.clone(), 24.0, TextOptions::new());
-        graphics.draw_text((self.data.cover_position.1.0 + 25.0, 75.0), accent, &album);
+        graphics.draw_text((track_origin.0, track_origin.1 + 50.0), accent, &album);
         let artist = font.layout_text(&*self.data.artist.clone(), 24.0, TextOptions::new());
-        graphics.draw_text((self.data.cover_position.1.0 + 25.0, 105.0), accent, &artist);
-        if let Some(battery)= &self.data.battery {
-            let mut battery_text = format!("Battery: {:3.0}%",battery.charge);
-            if battery.charging{
-                battery_text = format!("{} - Charging",battery_text);
-            }
-            let battery = font.layout_text(battery_text.as_str(), 24.0, TextOptions::new());
-            graphics.draw_text((self.data.cover_position.1.0 + 25.0, 135.0), accent, &battery);
+        graphics.draw_text((track_origin.0, track_origin.1 + 80.0), accent, &artist);
+        if let Some(battery) = &self.data.battery {
+            let mut battery_text = format!("{:3.0}%", battery.charge);
+            /*if battery.charging {
+                battery_text = format!("{} - Charging", battery_text);
+            }*/
+            let battery_text = font.layout_text(battery_text.as_str(), 24.0, TextOptions::new());
+            graphics.draw_text(self.data.battery_position.0, accent, &battery_text);
+            let battery_icon =
+                if battery.charging {
+                    match battery.charge {
+                        0.0..=16.0 => "\u{f0a2}",
+                        16.0..=32.0 => "\u{f0a3}",
+                        32.0..=48.5 => "\u{f0a4}",
+                        48.0..=64.0 => "\u{f0a5}",
+                        64.0..=80.0 => "\u{f0a6}",
+                        80.0..=96.0 => "\u{f0a7}",
+                        _ => "\u{e1a3}"
+                    }
+                } else {
+                    match battery.charge {
+                        0.0..=12.5 => "\u{ebdc}",
+                        12.5..=25.0 => "\u{ebd9}",
+                        25.0..=37.5 => "\u{ebe0}",
+                        37.5..=50.0 => "\u{ebdd}",
+                        50.0..=62.5 => "\u{ebe2}",
+                        62.5..=75.0 => "\u{ebd4}",
+                        75.0..=87.5 => "\u{ebd2}",
+                        87.5..=100.0 => "\u{e1a4}",
+                        _ => "\u{f7ea}",
+                    }
+                };
+            let battery_icon = iconfont.layout_text(battery_icon, 32.0, TextOptions::new());
+            graphics.draw_text((self.data.battery_position.1.0 - 20.0, self.data.battery_position.1.1 - 32.0), accent, &battery_icon);
         }
         let progress_bar_back = Rectangle::from_tuples(self.data.progress_position.0, self.data.progress_position.1);
         let progress_bar_back_color = Color::from_rgba(accent.r(), accent.g(), accent.b(), 0.5);
@@ -344,10 +404,9 @@ fn get_token(client: &Client, refresh: String) -> Result<RefreshResponse> {
         .form(&RefreshBody { grant_type: "refresh_token".to_owned(), refresh_token: refresh, client_id: "".to_owned() })
         .basic_auth(include_str!("client.id"), Some(include_str!("client.secret")))
         .send()?.json::<RefreshResponse>()?)
-
 }
 
-fn poll(poll_token: &RefreshResponse, poll_client: &Client) ->Result<DisplayData>{
+fn poll(poll_token: &RefreshResponse, poll_client: &Client) -> Result<DisplayData> {
     let token = poll_token;
     let playback_state = poll_client
         .get("https://api.spotify.com/v1/me/player")
@@ -356,8 +415,8 @@ fn poll(poll_token: &RefreshResponse, poll_client: &Client) ->Result<DisplayData
     let mut_data = &mut DisplayData::default();
     mut_data.token = token.clone();
     if playback_state.status() != StatusCode::NO_CONTENT {
-        let playback_state = playback_state.json::<Option<spotify::CurrentlyPlayingContextObject>>()?;
-
+        let playback_state = playback_state.text()?;
+        let playback_state: Option<spotify::CurrentlyPlayingContextObject> = serde_json::from_str(playback_state.as_str())?;
         if let Some(playback_state) = playback_state {
             if let Some(progress) = playback_state.progress_ms {
                 mut_data.current_progress = Duration::from_millis(progress.unsigned_abs().into());
@@ -395,13 +454,13 @@ fn poll(poll_token: &RefreshResponse, poll_client: &Client) ->Result<DisplayData
                                                 36,
                                             )?;
                                             let mut valid_colours: Vec<&RGB8> = palette.iter().filter(|c| {
-                                                let hsv: Hsv = color::rgb!(c.r,c.g,c.b).to_hsv();
-                                                hsv.s > 0.3 && hsv.v > 0.1
+                                                let hsv = Hsv::from_color(Srgb::new(c.r,c.g,c.b).into_format::<f32>());
+                                                hsv.saturation > 0.3 && hsv.value > 0.1
                                             }).collect();
                                             if valid_colours.len() == 0 {
                                                 valid_colours = palette.iter().filter(|c| {
-                                                    let hsv: Hsv = color::rgb!(c.r,c.g,c.b).to_hsv();
-                                                    hsv.v > 0.3
+                                                    let hsv = Hsv::from_color(Srgb::new(c.r,c.g,c.b).into_format::<f32>());
+                                                    hsv.value > 0.3
                                                 }).collect();
                                             }
                                             mut_data.accent = *valid_colours[0];

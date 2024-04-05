@@ -30,7 +30,7 @@ color-thief = "0.2.2"
 image = { version = "0.25.0" ,default-features = false,features = ["png","ico","jpeg"]}
 rgb = { version = "0.8.37",default-features = false }
 speedy2d = { version = "2.1.0", path= "../Speedy2D",default-features = true }
-color-rs = "0.8.0"
+palette = "0.7.5"
 log = "0.4.21"
 simplelog = { version = "0.12.2", default-features = false,features = ["termcolor"]}
 home = "0.5.9"
