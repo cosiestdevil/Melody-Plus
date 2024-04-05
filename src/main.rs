@@ -2,14 +2,14 @@
 
 use std::fs::File;
 use simplelog::*;
-use log::{info, error, warn};
+use log::{info, error};
 use std::ops::Deref;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use anyhow::Result;
 use image::RgbaImage;
-use palette::{Hsl, IntoColor, FromColor, Srgb, Hsv};
+use palette::{Hsl, FromColor, Srgb, Hsv};
 use reqwest::blocking::Client;
 use reqwest::StatusCode;
 use rgb::{RGB, RGB8};
@@ -261,7 +261,7 @@ impl WindowHandler<DisplayData> for MyWindow {
             graphics.draw_text((self.data.network_position.0.0, self.data.battery_position.1.1 - 32.0), accent, &signal_icon);
         }
         if let Some(battery) = &self.data.battery {
-            let mut battery_text = format!("{:3.0}%", battery.charge);
+            let battery_text = format!("{:3.0}%", battery.charge);
             let battery_text = font.layout_text(battery_text.as_str(), 24.0, TextOptions::new());
             graphics.draw_text(self.data.battery_position.0, accent, &battery_text);
             let battery_icon =
