@@ -1942,6 +1942,7 @@ dependencies = [
 [[package]]
 name = "speedy2d"
 version = "2.1.0"
+source = "git+https://github.com/cosiestdevil/Speedy2D.git?branch=touch-support#a40af8166d914bce87ebca43bfd774c6776bb449"
 dependencies = [
  "backtrace",
  "earcutr",
