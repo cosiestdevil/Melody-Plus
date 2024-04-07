@@ -2,17 +2,22 @@
 
 use std::fs::File;
 use simplelog::*;
-use log::{info, error};
+use log::{info, error, warn};
 use std::ops::Deref;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use anyhow::Result;
-use image::RgbaImage;
+use base64::Engine;
+use base64::engine::general_purpose::URL_SAFE;
+use image::{EncodableLayout, RgbaImage};
 use palette::{Hsl, FromColor, Srgb, Hsv};
 use reqwest::blocking::Client;
 use reqwest::StatusCode;
 use rgb::{RGB, RGB8};
+use rsa::pkcs1::LineEnding;
+use rsa::pkcs8::EncodePublicKey;
+use rsa::sha2::{Digest, Sha256};
 use serde::{Deserialize, Serialize};
 use speedy2d::{Graphics2D, Window};
 use speedy2d::color::Color;
@@ -29,9 +34,10 @@ mod spotify;
 #[cfg(all(unix, feature = "INA219"))]
 mod battery;
 mod wifi;
+mod auth;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
-const NAME: &str = env!("CARGO_PKG_NAME");
+pub const NAME: &str = env!("CARGO_PKG_NAME");
 
 fn main() -> Result<()> {
     CombinedLogger::init(
@@ -150,8 +156,19 @@ impl WindowHandler<DisplayData> for MyWindow {
         let poll_user_event_sender = self.events.clone();
         let battery_user_event_sender = self.events.clone();
         let client = Client::builder().build().unwrap();
-        let refresh = include_str!("refresh.token");
-        let token = get_token(&client, refresh.into());
+
+        let (private_key,public_key) = auth::get_keys().unwrap();
+        let encoded_public_key = public_key.to_public_key_pem(LineEnding::LF).unwrap();
+        client.post("http://127.0.0.1:8000/link").body(encoded_public_key.clone()).bearer_auth("a").send().unwrap();
+        let mut hasher = Sha256::new();
+        hasher.update(encoded_public_key.as_bytes());
+        let result = hasher.finalize();
+        let device_id =URL_SAFE.encode(result.as_slice());
+        let refresh = client.post("http://127.0.0.1:8000/refresh_token").body(device_id).send().unwrap().bytes().unwrap();
+        let refresh = auth::decrypt(private_key,refresh.deref()).unwrap();
+        let refresh = serde_json::from_str::<SecretRefreshResponse>(refresh.as_str()).unwrap();
+        //let refresh = include_str!("refresh.token");
+        let token = get_token(&client, &refresh);
         if let Err(err) = token {
             error!("{err:?}");
             return;
@@ -183,7 +200,7 @@ impl WindowHandler<DisplayData> for MyWindow {
             loop {
                 std::thread::sleep(Duration::from_secs(60 * 30));
                 let mut token = refresh_token.lock().unwrap();
-                let new_token = get_token(&refresh_client, refresh.into());
+                let new_token = get_token(&refresh_client,&refresh);
                 match new_token {
                     Ok(new_token) => {
                         info!("Got New Token");
@@ -335,7 +352,7 @@ impl WindowHandler<DisplayData> for MyWindow {
             let x_range = top_left.0..bottom_right.0;
             let y_range = top_left.1..bottom_right.1;
             if x_range.contains(&self.data.mouse.0) && y_range.contains(&self.data.mouse.1) {
-                let client = Client::builder().build().unwrap();
+                let client =  reqwest::blocking::Client::new();
                 if self.data.playing {
                     let _ = client.put("https://api.spotify.com/v1/me/player/pause").bearer_auth(self.data.token.access_token.clone()).send();
                     println!("Pause");
@@ -405,12 +422,15 @@ fn draw_button(position: &((f32, f32), (f32, f32)), font: &Font, back: Color, fr
     graphics.draw_text((position.0.0, position.0.1), front, &play_pause_text);
 }
 
-fn get_token(client: &Client, refresh: String) -> Result<RefreshResponse> {
-    Ok(client
+fn get_token(client: &Client, refresh: &SecretRefreshResponse) -> Result<RefreshResponse> {
+    let resp = client
         .post("https://accounts.spotify.com/api/token")
-        .form(&RefreshBody { grant_type: "refresh_token".to_owned(), refresh_token: refresh, client_id: "".to_owned() })
-        .basic_auth(include_str!("client.id"), Some(include_str!("client.secret")))
-        .send()?.json::<RefreshResponse>()?)
+        .form(&RefreshBody { grant_type: "refresh_token".to_owned(), refresh_token: refresh.token.clone(), client_id: "".to_owned() })
+        .basic_auth(include_str!("client.id"), Some(&refresh.secret))
+        .send()?;
+    let temp = resp.text()?;
+    Ok(serde_json::from_str::<RefreshResponse>(temp.as_str())?)
+    /*Ok(resp.json::<RefreshResponse>()?)*/
 }
 
 fn poll(poll_token: &RefreshResponse, poll_client: &Client) -> Result<DisplayData> {
@@ -492,7 +512,11 @@ struct RefreshBody {
     pub refresh_token: String,
     pub client_id: String,
 }
-
+#[derive(Deserialize)]
+struct SecretRefreshResponse{
+    token:String,
+    secret:String,
+}
 #[derive(Deserialize, Clone, Debug, Default)]
 struct RefreshResponse {
     pub access_token: String,

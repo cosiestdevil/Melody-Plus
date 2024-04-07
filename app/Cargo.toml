@@ -1,0 +1,45 @@
+[package]
+name = "melody-plus"
+version = "0.0.1"
+edition = "2021"
+license = "Apache-2.0"
+authors = ["Justin Wiblin <justinw@cosiestdevil.uk>"]
+publish = false
+readme = "readme.md"
+[package.metadata.winres]
+ProductName="Melody Plus"
+FileDescription="Melody Plus"
+
+[target.'cfg(windows)'.build-dependencies]
+winres = "0.1"
+
+[target.'cfg(unix)'.dependencies]
+ina219 = { version = "0.2.0", git = "https://github.com/tdittr/ina219.git", branch = "add-configuration-register", features = ["std"] }
+linux-embedded-hal = "0.4"
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+anyhow = { version = "1.0.81" }
+reqwest = { version = "0.12.2", features = ["json","rustls-tls","blocking"],default-features = false }
+serde = { version = "1" ,features = ["serde_derive"],default-features = false}
+serde_with = { version = "3.7.0",default-features = false }
+serde_json = { version = "^1.0",default-features = false }
+url = "^2.2"
+time = { version = "0.3.34",default-features = false }
+color-thief = "0.2.2"
+image = { version = "0.25.0" ,default-features = false,features = ["png","ico","jpeg"]}
+rgb = { version = "0.8.37",default-features = false }
+speedy2d = { version = "2.1.0", git= "https://github.com/cosiestdevil/Speedy2D.git",branch = "touch-support", default-features = true }
+palette = "0.7.5"
+log = "0.4.21"
+simplelog = { version = "0.12.2", default-features = false,features = ["termcolor"]}
+home = "0.5.9"
+regex = "1.10.4"
+rsa = { version = "0.9.6",features = ["sha2"] }
+rand = "0.8.5"
+base64 = "0.22.0"
+
+[features]
+INA219 = []
+
+

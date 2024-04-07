@@ -1,5 +1,6 @@
 /.idea
-/target
-/src/refresh.token
-/src/client.id
-/src/client.secret
+**/target
+**/refresh.token
+**/client.id
+**/client.secret
+**/.env
