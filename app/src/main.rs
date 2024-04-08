@@ -40,6 +40,7 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const NAME: &str = env!("CARGO_PKG_NAME");
 
 fn main() -> Result<()> {
+    dotenvy::dotenv()?;
     CombinedLogger::init(
         vec![
             TermLogger::new(LevelFilter::Warn, Config::default(), TerminalMode::Mixed, ColorChoice::Auto),
@@ -156,18 +157,17 @@ impl WindowHandler<DisplayData> for MyWindow {
         let poll_user_event_sender = self.events.clone();
         let battery_user_event_sender = self.events.clone();
         let client = Client::builder().build().unwrap();
-
+        let api_base = dotenvy::var("API_BASE").expect("");
         let (private_key,public_key) = auth::get_keys().unwrap();
         let encoded_public_key = public_key.to_public_key_pem(LineEnding::LF).unwrap();
-        client.post("http://127.0.0.1:8000/link").body(encoded_public_key.clone()).bearer_auth("a").send().unwrap();
+        client.post(format!("{api_base}/link")).body(encoded_public_key.clone()).bearer_auth("a").send().unwrap();
         let mut hasher = Sha256::new();
         hasher.update(encoded_public_key.as_bytes());
         let result = hasher.finalize();
         let device_id =URL_SAFE.encode(result.as_slice());
-        let refresh = client.post("http://127.0.0.1:8000/refresh_token").body(device_id).send().unwrap().bytes().unwrap();
+        let refresh = client.post(format!("{api_base}/refresh_token")).body(device_id).send().unwrap().bytes().unwrap();
         let refresh = auth::decrypt(private_key,refresh.deref()).unwrap();
         let refresh = serde_json::from_str::<SecretRefreshResponse>(refresh.as_str()).unwrap();
-        //let refresh = include_str!("refresh.token");
         let token = get_token(&client, &refresh);
         if let Err(err) = token {
             error!("{err:?}");
@@ -426,7 +426,7 @@ fn get_token(client: &Client, refresh: &SecretRefreshResponse) -> Result<Refresh
     let resp = client
         .post("https://accounts.spotify.com/api/token")
         .form(&RefreshBody { grant_type: "refresh_token".to_owned(), refresh_token: refresh.token.clone(), client_id: "".to_owned() })
-        .basic_auth(include_str!("client.id"), Some(&refresh.secret))
+        .basic_auth(dotenvy::var("SPOTIFY_CLIENT_ID")?, Some(&refresh.secret))
         .send()?;
     let temp = resp.text()?;
     Ok(serde_json::from_str::<RefreshResponse>(temp.as_str())?)

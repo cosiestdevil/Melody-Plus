@@ -38,6 +38,7 @@ regex = "1.10.4"
 rsa = { version = "0.9.6",features = ["sha2"] }
 rand = "0.8.5"
 base64 = "0.22.0"
+dotenvy = "0.15.7"
 
 [features]
 INA219 = []

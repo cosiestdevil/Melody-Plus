@@ -2081,6 +2081,7 @@ dependencies = [
  "anyhow",
  "base64 0.22.0",
  "color-thief",
+ "dotenvy",
  "home",
  "image 0.25.1",
  "ina219",

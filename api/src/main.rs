@@ -21,7 +21,7 @@ fn index() -> &'static str {
 }
 
 #[get("/setup")]
-async fn request_spotify(_user:User,_pool: &State<Connection>,current_host: CurrentHost)->Redirect{
+async fn request_spotify(_user:User,_pool: &State<Connection>,current_host: CurrentHost)->Result<Redirect,Status>{
     //let code_verifier = Alphanumeric.sample_string(&mut rand::thread_rng(), 64);
     let state = Alphanumeric.sample_string(&mut rand::thread_rng(), 64);
     //let mut hasher = Sha256::new();
@@ -31,7 +31,7 @@ async fn request_spotify(_user:User,_pool: &State<Connection>,current_host: Curr
     //sqlx::query!("insert into spotify_auth_requests (state,code_verifier) values ($1,$2)",state,code_verifier).execute(pool.inner()).await.unwrap();
 
     let redirect_url = format!("http://{}{}",current_host.0,uri!(spotify(_,_)));
-    let client_id = include_str!("client.id");
+    let client_id = dotenvy::var("SPOTIFY_CLIENT_ID").or_else(|_|Err(Status::UnavailableForLegalReasons))?;
     let query_params =SpotifyAuthParams {
         response_type: "code".to_owned(),
         client_id: client_id.to_owned(),
@@ -39,17 +39,17 @@ async fn request_spotify(_user:User,_pool: &State<Connection>,current_host: Curr
         redirect_uri: redirect_url,
         state
     };
-    Redirect::to(format!("https://accounts.spotify.com/authorize?{}",serde_qs::to_string(&query_params).unwrap()))
+    Ok(Redirect::to(format!("https://accounts.spotify.com/authorize?{}",serde_qs::to_string(&query_params).unwrap())))
     //redirect to spotify url
 }
 
 #[get("/spotify?<code>&<state>")]
-async fn spotify(user:User,pool: &State<Connection>,code:Option<&str>,state:Option<&str>,current_host: CurrentHost){
+async fn spotify(user:User,pool: &State<Connection>,code:Option<&str>,state:Option<&str>,current_host: CurrentHost)-> Result<(),Status>{
     //let code_verifier = sqlx::query_scalar!("delete from spotify_auth_requests where state = $1 returning code_verifier",state).fetch_one(pool.inner()).await.unwrap();
     let redirect_uri = format!("http://{}{}",current_host.0,uri!(spotify(_,_)));
     let client = reqwest::ClientBuilder::new().build().unwrap();
-    let client_id = include_str!("client.id");
-    let client_secret = include_str!("client.secret");
+    let client_id = dotenvy::var("SPOTIFY_CLIENT_ID").or_else(|_|Err(Status::UnavailableForLegalReasons))?;
+    let client_secret = dotenvy::var("SPOTIFY_CLIENT_SECRET").or_else(|_|Err(Status::UnavailableForLegalReasons))?;
     let refresh_token = client
         .post("https://accounts.spotify.com/api/token")
         .form(&TokenRequestBody { grant_type: "authorization_code".to_owned(),code:code.unwrap().to_owned(), client_id:"".to_owned(),redirect_uri })
@@ -57,7 +57,7 @@ async fn spotify(user:User,pool: &State<Connection>,code:Option<&str>,state:Opti
         .send().await.unwrap();
     let refresh_token = refresh_token.json::<TokenResponseBody>().await.unwrap();
     sqlx::query!("update public.user set spotify_refresh_token = $1 where id=$2",refresh_token.refresh_token,user.id).execute(pool.inner()).await.unwrap();
-
+    Ok(())
 }
 #[derive(Serialize)]
 struct TokenRequestBody{
@@ -99,11 +99,11 @@ async fn refresh_token(key:&str,pool: &State<Connection>)->Result<Vec<u8>,Status
         .fetch_optional(pool.inner()).await.unwrap();
     if let Some(device) = device{
         let public_key = RsaPublicKey::from_public_key_pem(device.public_key.as_str()).unwrap();
-        let refresh_token = sqlx::query_scalar!("select spotify_refresh_token from public.user where id = $1",device.user_id).fetch_one(pool.inner()).await.unwrap();// include_str!("refresh.token").as_bytes();
+        let refresh_token = sqlx::query_scalar!("select spotify_refresh_token from public.user where id = $1",device.user_id).fetch_one(pool.inner()).await.unwrap();
         if let Some(refresh_token) = refresh_token {
             let data = RefreshResponse{
                 token:refresh_token,
-                secret:include_str!("client.secret").to_owned()
+                secret:dotenvy::var("SPOTIFY_CLIENT_SECRET").or_else(|_|Err(Status::UnavailableForLegalReasons))?
             };
             let data = serde_json::to_string(&data).unwrap();
             let refresh_token = data.as_bytes();
