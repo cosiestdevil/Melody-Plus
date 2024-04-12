@@ -1,6 +1,7 @@
 #![allow(illegal_floating_point_literal_pattern)]
 
 use std::fs::File;
+use std::io::Cursor;
 use simplelog::*;
 use log::{info, error, warn};
 use std::ops::Deref;
@@ -24,6 +25,7 @@ use speedy2d::color::Color;
 use speedy2d::dimen::{UVec2, Vec2};
 use speedy2d::font::{Font, TextAlignment, TextLayout, TextOptions};
 use speedy2d::image::{ImageDataType, ImageSmoothingMode};
+use speedy2d::image::ImageFileFormat::PNG;
 use speedy2d::shape::Rectangle;
 use speedy2d::window::{MouseButton, UserEventSender, WindowCreationOptions, WindowHandler, WindowHelper, WindowSize, WindowStartupInfo};
 
@@ -266,6 +268,10 @@ impl WindowHandler<DisplayData> for MyWindow {
         graphics.draw_text((track_origin.0, track_origin.1 + 50.0), accent, &album);
         let artist = font.layout_text(&*self.data.artist.clone(), 24.0, TextOptions::new());
         graphics.draw_text((track_origin.0, track_origin.1 + 80.0), accent, &artist);
+        let spotify_icon_bytes = include_bytes!("Spotify_Icon_RGB_Green.png");
+        let spotify_icon = graphics.create_image_from_file_bytes(Some(PNG),ImageSmoothingMode::Linear,Cursor::new(spotify_icon_bytes)).unwrap();
+        let spotify_rect = Rectangle::from_tuples((self.data.cover_position.1.0+21.0,self.data.cover_position.1.1-63.0),(self.data.cover_position.1.0+63.0,self.data.cover_position.1.1-21.0));
+        graphics.draw_rectangle_image(spotify_rect,&spotify_icon);
         if let Ok(signal) = wifi::get_signal(){
             let signal_icon = match signal{
                 0.0..=0.25=>"\u{ebe4}",
