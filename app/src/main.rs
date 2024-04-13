@@ -3,7 +3,7 @@
 use std::fs::File;
 use std::io::Cursor;
 use simplelog::*;
-use log::{info, error, warn};
+use log::{info, error};
 use std::ops::Deref;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -11,7 +11,7 @@ use std::time::Duration;
 use anyhow::Result;
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE;
-use image::{EncodableLayout, RgbaImage};
+use image::RgbaImage;
 use palette::{Hsl, FromColor, Srgb, Hsv};
 use reqwest::blocking::Client;
 use reqwest::StatusCode;
@@ -42,13 +42,16 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const NAME: &str = env!("CARGO_PKG_NAME");
 
 fn main() -> Result<()> {
-    dotenvy::dotenv()?;
     CombinedLogger::init(
         vec![
             TermLogger::new(LevelFilter::Warn, Config::default(), TerminalMode::Mixed, ColorChoice::Auto),
             WriteLogger::new(LevelFilter::Info, Config::default(), File::create(home::home_dir().unwrap().join(format!("{NAME}.log"))).unwrap()),
         ]
     ).unwrap();
+    let res = dotenvy::dotenv();
+    if let Err(error) = res{
+        error!("{:?}",error);
+    }
     let window: Window<DisplayData> = Window::new_with_user_events("Title", WindowCreationOptions::new_windowed(
         WindowSize::PhysicalPixels(UVec2::new(800, 480)),
         None,
@@ -429,13 +432,23 @@ fn draw_button(position: &((f32, f32), (f32, f32)), font: &Font, back: Color, fr
 }
 
 fn get_token(client: &Client, refresh: &SecretRefreshResponse) -> Result<RefreshResponse> {
-    let resp = client
-        .post("https://accounts.spotify.com/api/token")
-        .form(&RefreshBody { grant_type: "refresh_token".to_owned(), refresh_token: refresh.token.clone(), client_id: "".to_owned() })
-        .basic_auth(dotenvy::var("SPOTIFY_CLIENT_ID")?, Some(&refresh.secret))
-        .send()?;
-    let temp = resp.text()?;
-    Ok(serde_json::from_str::<RefreshResponse>(temp.as_str())?)
+    let temp = dotenvy::var("SPOTIFY_CLIENT_ID");
+   match temp{
+       Ok(id) => {
+           let resp = client
+               .post("https://accounts.spotify.com/api/token")
+               .form(&RefreshBody { grant_type: "refresh_token".to_owned(), refresh_token: refresh.token.clone(), client_id: "".to_owned() })
+               .basic_auth(id, Some(&refresh.secret))
+               .send()?;
+           let temp = resp.text()?;
+           Ok(serde_json::from_str::<RefreshResponse>(temp.as_str())?)
+       }
+       Err(err) => {
+           error!("{:?}",err);
+           Err(err.into())
+       }
+   }
+   
     /*Ok(resp.json::<RefreshResponse>()?)*/
 }
 

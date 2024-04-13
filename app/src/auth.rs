@@ -1,5 +1,5 @@
+use std::fs;
 use std::path::Path;
-use anyhow::anyhow;
 use rsa::{Oaep, RsaPrivateKey, RsaPublicKey};
 use rsa::pkcs1::LineEnding;
 use rsa::pkcs8::{DecodePrivateKey, EncodePrivateKey, EncodePublicKey};
@@ -7,6 +7,7 @@ use rsa::sha2::Sha256;
 
 pub fn get_keys() -> anyhow::Result<(RsaPrivateKey, RsaPublicKey)> {
     let base_dir = home::home_dir().unwrap().join(crate::NAME);
+    fs::create_dir_all(&base_dir)?;
     let priv_key_file = base_dir.join("private.key");
     if !Path::exists(&priv_key_file) {
         return generate_new_keys();

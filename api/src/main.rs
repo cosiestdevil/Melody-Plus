@@ -2,6 +2,7 @@ mod data;
 
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE;
+use dotenvy::dotenv;
 use rocket::{get, launch, post, Request, routes, State, uri};
 use rocket::http::Status;
 use rocket::outcome::Outcome::Success;
@@ -30,7 +31,7 @@ async fn request_spotify(_user:User,_pool: &State<Connection>,current_host: Curr
     //let code_challenge =URL_SAFE.encode(result.as_slice()).replace("=","");
     //sqlx::query!("insert into spotify_auth_requests (state,code_verifier) values ($1,$2)",state,code_verifier).execute(pool.inner()).await.unwrap();
 
-    let redirect_url = format!("http://{}{}",current_host.0,uri!(spotify(_,_)));
+    let redirect_url = format!("{}{}",current_host.0,uri!(spotify(_,_)));
     let client_id = dotenvy::var("SPOTIFY_CLIENT_ID").or_else(|_|Err(Status::UnavailableForLegalReasons))?;
     let query_params =SpotifyAuthParams {
         response_type: "code".to_owned(),
@@ -46,7 +47,7 @@ async fn request_spotify(_user:User,_pool: &State<Connection>,current_host: Curr
 #[get("/spotify?<code>&<state>")]
 async fn spotify(user:User,pool: &State<Connection>,code:Option<&str>,state:Option<&str>,current_host: CurrentHost)-> Result<(),Status>{
     //let code_verifier = sqlx::query_scalar!("delete from spotify_auth_requests where state = $1 returning code_verifier",state).fetch_one(pool.inner()).await.unwrap();
-    let redirect_uri = format!("http://{}{}",current_host.0,uri!(spotify(_,_)));
+    let redirect_uri = format!("{}{}",current_host.0,uri!(spotify(_,_)));
     let client = reqwest::ClientBuilder::new().build().unwrap();
     let client_id = dotenvy::var("SPOTIFY_CLIENT_ID").or_else(|_|Err(Status::UnavailableForLegalReasons))?;
     let client_secret = dotenvy::var("SPOTIFY_CLIENT_SECRET").or_else(|_|Err(Status::UnavailableForLegalReasons))?;
@@ -55,7 +56,9 @@ async fn spotify(user:User,pool: &State<Connection>,code:Option<&str>,state:Opti
         .form(&TokenRequestBody { grant_type: "authorization_code".to_owned(),code:code.unwrap().to_owned(), client_id:"".to_owned(),redirect_uri })
         .basic_auth(client_id,Some(client_secret))
         .send().await.unwrap();
-    let refresh_token = refresh_token.json::<TokenResponseBody>().await.unwrap();
+    let text = refresh_token.text().await.unwrap();
+    println!("{}",text);
+    let refresh_token = serde_json::from_str::<TokenResponseBody>(text.as_str()).unwrap();
     sqlx::query!("update public.user set spotify_refresh_token = $1 where id=$2",refresh_token.refresh_token,user.id).execute(pool.inner()).await.unwrap();
     Ok(())
 }
@@ -161,8 +164,7 @@ impl<'r> FromRequest<'r> for CurrentHost {
 
     async fn from_request(request: &'r Request<'_>) -> Outcome<Self, Self::Error> {
         // Extract the host from the request URI
-        let host = request.host().unwrap().to_string();
-
+        let host = dotenvy::var("API_BASE").unwrap();
         Success(CurrentHost(host))
     }
 }
